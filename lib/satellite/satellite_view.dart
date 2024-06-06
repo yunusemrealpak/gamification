@@ -8,7 +8,7 @@ class SatelliteView extends StatefulWidget {
   const SatelliteView({super.key});
 
   @override
-  _SatelliteViewState createState() => _SatelliteViewState();
+  State<SatelliteView> createState() => _SatelliteViewState();
 }
 
 class _SatelliteViewState extends State<SatelliteView> {
