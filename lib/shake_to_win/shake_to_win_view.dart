@@ -1,6 +1,8 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'dart:math';
 
 class ShakeToWinView extends StatefulWidget {
   const ShakeToWinView({super.key});
@@ -15,11 +17,13 @@ class _ShakeToWinViewState extends State<ShakeToWinView> {
   int shakeCount = 0;
   double shakeThresholdGravity = 2.7;
   bool shakeInProgress = false;
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
 
   @override
   void initState() {
     super.initState();
-    accelerometerEventStream().listen((AccelerometerEvent event) {
+    _accelerometerSubscription =
+        accelerometerEvents.listen((AccelerometerEvent event) {
       double gX = event.x / 9.81;
       double gY = event.y / 9.81;
       double gZ = event.z / 9.81;
@@ -36,6 +40,12 @@ class _ShakeToWinViewState extends State<ShakeToWinView> {
         }
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _accelerometerSubscription?.cancel();
+    super.dispose();
   }
 
   void onShake() {
