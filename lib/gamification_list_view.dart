@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gamification/quick_tap/quick_tap_view.dart';
+import 'package:gamification/satellite/satellite_view.dart';
 import 'package:gamification/stracher/stracher_match_view.dart';
 
 import 'spinning_wheel/spinning_wheel_view.dart';
@@ -94,6 +95,27 @@ class GamificationListView extends StatelessWidget {
               ),
               child: const Center(
                 child: Text('Hızlı Tıklama'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const SatelliteView(),
+                ),
+              );
+            },
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(
+                child: Text('Uydu Yörünge Oyunu'),
               ),
             ),
           ),
