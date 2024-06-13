@@ -15,11 +15,12 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
     with SingleTickerProviderStateMixin {
   double _yPosition = 0;
   double _yVelocity = 0;
-  static const double _accelerationFactor = 0.1;
+  static const double _initialAcceleration = 0.5;
+  static const double _deceleration = 0.05;
   Timer? _timer;
 
-  double _orbitAngle = 0;
-  static const double _orbitRadius = 180;
+  double _orbitAngle = 120;
+  static const double _orbitRadius = 90;
   static const double _angleIncrement = 0.01;
 
   bool _isGameStarted = false;
@@ -30,6 +31,8 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
   bool _isSatelliteVisible = true;
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
+
+  double _dragDistance = 0.0;
 
   @override
   void initState() {
@@ -52,19 +55,19 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
 
     Future.microtask(() {
       final size = MediaQuery.of(context).size;
-      _yPosition = size.height - 75;
+      _yPosition = size.height / 1.5;
 
       _timer = Timer.periodic(const Duration(milliseconds: 16), (e) {
         if (mounted && _isGameStarted) {
           if (_isSatelliteLaunched) {
             setState(() {
               _yPosition += _yVelocity;
-              _yVelocity -= _accelerationFactor;
+              _yVelocity -= _deceleration;
 
               if (_yPosition <= 0) {
                 _attempts--;
                 _yVelocity = 0;
-                _yPosition = size.height - 75;
+                _yPosition = size.height / 1.5;
                 _isSatelliteLaunched = false;
                 if (_attempts == 0) {
                   _hasLost = true;
@@ -113,11 +116,21 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
     double targetX = centerX + _orbitRadius * cos(_orbitAngle);
     double targetY = centerY + _orbitRadius * sin(_orbitAngle);
 
-    double toleranceRadius = 37.5;
+    double toleranceRadius = 18.75;
     double distance = sqrt(pow(satelliteCenterX - targetX, 2) +
         pow(satelliteCenterY - targetY, 2));
 
     return distance <= toleranceRadius;
+  }
+
+  Color getPullBarColor() {
+    if (_dragDistance > MediaQuery.of(context).size.height / 4) {
+      return Colors.red;
+    } else if (_dragDistance > MediaQuery.of(context).size.height / 8) {
+      return Colors.green;
+    } else {
+      return Colors.yellow;
+    }
   }
 
   @override
@@ -139,12 +152,12 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
           Image.asset('assets/png/space.jpeg',
               width: size.width, height: size.height, fit: BoxFit.cover),
           Positioned(
-            top: centerY - 75,
-            left: centerX - 75,
+            top: centerY - 37.5,
+            left: centerX - 37.5,
             child: Lottie.asset(
               'assets/lottie/earth.json',
-              width: 150,
-              height: 150,
+              width: 75,
+              height: 75,
             ),
           ),
           CustomPaint(
@@ -152,24 +165,42 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
             child: Container(),
           ),
           Positioned(
-            left: targetX - 37.5,
-            top: targetY - 37.5,
+            left: targetX - 18.75,
+            top: targetY - 18.75,
             child: Lottie.asset(
               _hasWon
                   ? 'assets/lottie/satellite.json'
                   : 'assets/lottie/satellite_point.json',
-              width: 75,
-              height: 75,
+              width: 37.5,
+              height: 37.5,
             ),
           ),
           if (_isSatelliteVisible)
             Positioned(
-              left: centerX - 37.5,
-              top: _yPosition - 37.5,
-              child: Lottie.asset(
-                'assets/lottie/satellite.json',
-                width: 75,
-                height: 75,
+              left: centerX - 18.75,
+              top: _yPosition - 18.75,
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  setState(() {
+                    _dragDistance += details.delta.dy;
+                    _dragDistance = _dragDistance.clamp(0, size.height / 2);
+                  });
+                },
+                onPanEnd: (details) {
+                  setState(() {
+                    _isSatelliteLaunched = true;
+                    _yVelocity = -_dragDistance / 10;
+                    _dragDistance = 0;
+                  });
+                },
+                child: Transform.translate(
+                  offset: Offset(0, _dragDistance),
+                  child: Lottie.asset(
+                    'assets/lottie/satellite.json',
+                    width: 37.5,
+                    height: 37.5,
+                  ),
+                ),
               ),
             ),
           Positioned(
@@ -183,6 +214,30 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
                   color: Colors.yellow,
                   size: 30,
                 ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            bottom: 16,
+            child: Container(
+              width: 20,
+              height: size.height / 3,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: 0,
+                    child: Container(
+                      width: 20,
+                      height: _dragDistance.clamp(0, size.height / 3),
+                      color: getPullBarColor(),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -203,7 +258,7 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
                     ),
                     const SizedBox(height: 20),
                     const Text(
-                      'Fırlatma ikonuna tıklayarak uyduyu fırlatın.\n\n'
+                      'Uyduyu aşağı çekip bırakın.\n\n'
                       'Uydu yörüngedeki uydu ile çakıştığında kazanın.',
                       style: TextStyle(
                         color: Colors.white,
@@ -298,20 +353,6 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
                 ),
               ),
             ),
-          if (_isGameStarted && !_hasWon && !_hasLost && !_isSatelliteLaunched)
-            Positioned(
-              bottom: 16,
-              right: 16,
-              child: FloatingActionButton(
-                onPressed: () {
-                  setState(() {
-                    _isSatelliteLaunched = true;
-                    _yVelocity = -5;
-                  });
-                },
-                child: const Icon(Icons.rocket_launch),
-              ),
-            ),
         ],
       ),
     );
@@ -353,7 +394,7 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
                 _hasWon = false;
                 _hasLost = false;
                 _attempts = 3;
-                _yPosition = MediaQuery.of(context).size.height - 75;
+                _yPosition = MediaQuery.of(context).size.height / 1.5;
                 _isSatelliteVisible = true;
               });
             },
@@ -375,7 +416,7 @@ class OrbitPainter extends CustomPainter {
 
     double centerX = size.width / 2;
     double centerY = size.height / 4;
-    double radius = 180;
+    double radius = 90;
 
     canvas.drawCircle(Offset(centerX, centerY), radius, paint);
   }
