@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:gamification/widgets/listen.dart';
 import 'package:lottie/lottie.dart';
 
 class SatelliteLaunchView extends StatefulWidget {
@@ -11,220 +12,268 @@ class SatelliteLaunchView extends StatefulWidget {
   State<SatelliteLaunchView> createState() => _SatelliteLaunchViewState();
 }
 
-class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
-    with SingleTickerProviderStateMixin {
-  double _yPosition = 0;
-  double _yVelocity = 0;
-  static const double _initialAcceleration = 0.5;
-  static const double _deceleration = 0.05;
+class _SatelliteLaunchViewState extends State<SatelliteLaunchView> {
+  final GlobalKey _rocketKey = GlobalKey();
+  final GlobalKey _point1Key = GlobalKey();
+  final GlobalKey _point2Key = GlobalKey();
+
   Timer? _timer;
+  final ValueNotifier<bool> _isGameStarted = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _isLaunched = ValueNotifier<bool>(false);
 
-  double _orbitAngle = 120;
-  static const double _orbitRadius = 90;
-  static const double _angleIncrement = 0.01;
+  double _x1 = 0;
+  final double _y1 = 100;
 
-  bool _isGameStarted = false;
-  bool _isSatelliteLaunched = false;
-  bool _hasWon = false;
-  bool _hasLost = false;
-  int _attempts = 3;
-  bool _isSatelliteVisible = true;
-  late AnimationController _controller;
-  late Animation<Offset> _offsetAnimation;
+  double _x2 = 0;
+  final double _y2 = 100;
+  double _rocketY = 20;
 
-  double _dragDistance = 0.0;
+  double _orbitAngle = 0;
+  static const double _maxOrbitAngle = 6;
+
+  final double _dx = 2;
+  double _dy = 0;
+
+  double _power = 0;
+  static const double _maxPower = 100;
+  bool _isDragging = false;
+  bool _canLaunch = false;
 
   @override
   void initState() {
     super.initState();
+    Future.microtask(_update);
+  }
 
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 750),
-      vsync: this,
-    )..addListener(() {
-        setState(() {});
-      });
+  void _update() {
+    _x2 = MediaQuery.of(context).size.width / 2 + 100;
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (Timer e) {
+      setState(() {
+        _x1 += _dx;
+        _x2 += _dx;
 
-    _offsetAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+        Size size = MediaQuery.of(context).size;
 
-    Future.microtask(() {
-      final size = MediaQuery.of(context).size;
-      _yPosition = size.height / 1.5;
+        _orbitAngle = _maxOrbitAngle * sin(_x1 / size.width * 1 * pi);
 
-      _timer = Timer.periodic(const Duration(milliseconds: 16), (e) {
-        if (mounted && _isGameStarted) {
-          if (_isSatelliteLaunched) {
-            setState(() {
-              _yPosition += _yVelocity;
-              _yVelocity -= _deceleration;
+        if (_x1 - 50 > size.width) {
+          _x1 = -50;
+        }
 
-              if (_yPosition <= 0) {
-                _attempts--;
-                _yVelocity = 0;
-                _yPosition = size.height / 1.5;
-                _isSatelliteLaunched = false;
-                if (_attempts == 0) {
-                  _hasLost = true;
-                  _isGameStarted = false;
-                  _controller.forward();
-                }
-              }
+        if (_x2 - 50 > size.width) {
+          _x2 = -50;
+        }
 
-              if (_isSatelliteInPlace()) {
-                if (!_hasWon) {
-                  setState(() {
-                    _hasWon = true;
-                    _isSatelliteVisible = false;
-                    _isGameStarted = false;
-                  });
-                  _controller.forward();
-                }
-              }
-            });
+        if (!_isDragging && _isGameStarted.value) {
+          if (_power > 0) {
+            _dy = _power / 10; // Power consumption rate
+            _power -= 0.25; // Increase power consumption rate
           }
 
-          setState(() {
-            _orbitAngle += _angleIncrement;
-            if (_orbitAngle >= 2 * pi) {
-              _orbitAngle -= 2 * pi;
-            }
-          });
+          if (_canLaunch) {
+            _dy -= 0.05; // Gravity
+            _rocketY += _dy;
+            _checkCollision();
+          }
+
+          if (_rocketY < -50 || _rocketY > size.height + 50) {
+            reset();
+          }
         }
       });
     });
   }
 
-  double get centerX => MediaQuery.of(context).size.width / 2;
-  double get centerY => MediaQuery.of(context).size.height / 4;
-
   @override
   void dispose() {
     _timer?.cancel();
-    _controller.dispose();
     super.dispose();
   }
 
-  bool _isSatelliteInPlace() {
-    double satelliteCenterX = centerX;
-    double satelliteCenterY = _yPosition;
-    double targetX = centerX + _orbitRadius * cos(_orbitAngle);
-    double targetY = centerY + _orbitRadius * sin(_orbitAngle);
+  void _checkCollision() {
+    RenderBox rocketBox =
+        _rocketKey.currentContext!.findRenderObject() as RenderBox;
+    RenderBox point1Box =
+        _point1Key.currentContext!.findRenderObject() as RenderBox;
+    RenderBox point2Box =
+        _point1Key.currentContext!.findRenderObject() as RenderBox;
 
-    double toleranceRadius = 18.75;
-    double distance = sqrt(pow(satelliteCenterX - targetX, 2) +
-        pow(satelliteCenterY - targetY, 2));
+    Offset rocketPosition =
+        rocketBox.localToGlobal(rocketBox.size.center(Offset.zero));
+    Offset pointPosition =
+        point1Box.localToGlobal(point1Box.size.center(Offset.zero));
+    Offset point2Position =
+        point2Box.localToGlobal(point2Box.size.center(Offset.zero));
 
-    return distance <= toleranceRadius;
+    double distance = sqrt(pow(rocketPosition.dx - pointPosition.dx, 2) +
+        pow(rocketPosition.dy - pointPosition.dy, 2));
+    double distance2 = sqrt(pow(rocketPosition.dx - point2Position.dx, 2) +
+        pow(rocketPosition.dy - point2Position.dy, 2));
+
+    if (distance < 30 || distance2 < 30) {
+      reset();
+      _showWinDialog();
+    }
   }
 
-  Color getPullBarColor() {
-    if (_dragDistance > MediaQuery.of(context).size.height / 4) {
-      return Colors.red;
-    } else if (_dragDistance > MediaQuery.of(context).size.height / 8) {
+  void _showWinDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Kazandınız!'),
+          content: const Text('Roket başarıyla yerleşme noktasına ulaştı.'),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void reset() {
+    _x1 = 100;
+    _rocketY = 20;
+    _orbitAngle = 0;
+    _dy = 0;
+    _power = 0;
+    _isDragging = false;
+    _canLaunch = false;
+    _isGameStarted.value = false;
+    _isLaunched.value = false;
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    setState(() {
+      _isDragging = true;
+      _power = 0;
+    });
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    setState(() {
+      _power = (details.localPosition.dy / 450 * _maxPower).clamp(0, _maxPower);
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    setState(() {
+      _isDragging = false;
+      _dy = _power / 10;
+      _canLaunch = true;
+      _isLaunched.value = true;
+    });
+  }
+
+  Color _getPowerColor() {
+    if (_power < 33) {
+      return Colors.yellow;
+    } else if (_power < 66) {
       return Colors.green;
     } else {
-      return Colors.yellow;
+      return Colors.red;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    Size size = MediaQuery.of(context).size;
-
-    double targetX = centerX + _orbitRadius * cos(_orbitAngle);
-    double targetY = centerY + _orbitRadius * sin(_orbitAngle);
-
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
       body: Stack(
         children: [
-          Image.asset('assets/png/space.jpeg',
-              width: size.width, height: size.height, fit: BoxFit.cover),
-          Positioned(
-            top: centerY - 37.5,
-            left: centerX - 37.5,
-            child: Lottie.asset(
-              'assets/lottie/earth.json',
-              width: 75,
-              height: 75,
-            ),
-          ),
-          CustomPaint(
-            painter: OrbitPainter(),
-            child: Container(),
-          ),
-          Positioned(
-            left: targetX - 18.75,
-            top: targetY - 18.75,
-            child: Lottie.asset(
-              _hasWon
-                  ? 'assets/lottie/satellite.json'
-                  : 'assets/lottie/satellite_point.json',
-              width: 37.5,
-              height: 37.5,
-            ),
-          ),
-          if (_isSatelliteVisible)
-            Positioned(
-              left: centerX - 18.75,
-              top: _yPosition - 18.75,
-              child: GestureDetector(
-                onPanUpdate: (details) {
-                  setState(() {
-                    _dragDistance += details.delta.dy;
-                    _dragDistance = _dragDistance.clamp(0, size.height / 2);
-                  });
-                },
-                onPanEnd: (details) {
-                  setState(() {
-                    _isSatelliteLaunched = true;
-                    _yVelocity = -_dragDistance / 10;
-                    _dragDistance = 0;
-                  });
-                },
-                child: Transform.translate(
-                  offset: Offset(0, _dragDistance),
-                  child: Lottie.asset(
-                    'assets/lottie/satellite.json',
-                    width: 37.5,
-                    height: 37.5,
-                  ),
+          Column(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: _x1,
+                      top: _y1 - _orbitAngle,
+                      child: CircleAvatar(
+                        key: _point1Key,
+                        radius: 10,
+                        backgroundColor: Colors.red,
+                      ),
+                    ),
+                    Positioned(
+                      left: _x2,
+                      top: _y2 - _orbitAngle,
+                      child: CircleAvatar(
+                        key: _point2Key,
+                        radius: 10,
+                        backgroundColor: Colors.red,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      onPanStart: _onPanStart,
+                      onPanUpdate: _onPanUpdate,
+                      onPanEnd: _onPanEnd,
+                      child: Container(
+                        height: 200,
+                        width: double.infinity,
+                        color: Colors.transparent,
+                        alignment: Alignment.center,
+                        child: const Text('Drag to launch'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
-            right: 16,
-            child: Row(
-              children: List.generate(
-                _attempts,
-                (index) => const Icon(
-                  Icons.star,
-                  color: Colors.yellow,
-                  size: 30,
+            bottom: _rocketY,
+            left: MediaQuery.of(context).size.width / 2 - 25,
+            child: Listen(
+              notifier: _isGameStarted,
+              builder: (context, value, _) => Transform.rotate(
+                angle: value ? (_dy > 0 ? 0 : -_dy / 10) : 0,
+                origin: const Offset(0, 10),
+                child: Icon(
+                  key: _rocketKey,
+                  Icons.rocket,
+                  size: 50,
                 ),
               ),
             ),
           ),
           Positioned(
-            left: 16,
-            bottom: 16,
+            bottom: 15,
+            left: MediaQuery.of(context).size.width / 2 - 70,
+            child: Center(
+              child: Listen(
+                notifier: _isLaunched,
+                builder: (context, value, _) {
+                  if (!value) return const SizedBox();
+                  return Lottie.asset(
+                    'assets/lottie/smoke.json',
+                    width: 125,
+                    repeat: false,
+                  );
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            bottom: 50,
             child: Container(
-              width: 20,
-              height: size.height / 3,
+              height: 200,
+              width: 30,
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 2),
+                border: Border.all(color: Colors.black),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Stack(
@@ -232,197 +281,66 @@ class _SatelliteLaunchViewState extends State<SatelliteLaunchView>
                   Positioned(
                     bottom: 0,
                     child: Container(
-                      width: 20,
-                      height: _dragDistance.clamp(0, size.height / 3),
-                      color: getPullBarColor(),
+                      height: (_power * 2 < 0) ? 0 : (_power * 2).clamp(0, 200),
+                      width: 30,
+                      decoration: BoxDecoration(
+                        color: _getPowerColor(),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          if (!_isGameStarted && !_hasWon && !_hasLost)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Oyun Direktifleri',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Uyduyu aşağı çekip bırakın.\n\n'
-                      'Uydu yörüngedeki uydu ile çakıştığında kazanın.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _isGameStarted = true;
-                        });
-                      },
-                      child: const Text('Başlat'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (_hasWon)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Tebrikler, kazandınız!',
-                      style: TextStyle(
-                        color: Colors.green.shade900,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Harika bir iş çıkardınız!\n'
-                      'Altın ödülünüzü kazandınız!',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('Tamam'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (_hasLost)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Üzgünüm, kaybettiniz',
-                      style: TextStyle(
-                        color: Colors.red.shade900,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Harika bir iş çıkardınız!\n'
-                      'Daha güzel ödüller için haftaya tekrar deneyin!',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('Tamam'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          ValueListenableBuilder<bool>(
+              valueListenable: _isGameStarted,
+              builder: (context, value, child) {
+                return value
+                    ? const SizedBox()
+                    : Container(
+                        color: Colors.black.withOpacity(0.5),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Satellite Launch',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Drag to launch the satellite',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'You can adjust the power by dragging up and down',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              ElevatedButton(
+                                onPressed: () {
+                                  _isGameStarted.value = true;
+                                },
+                                child: const Text('Start Game'),
+                              )
+                            ],
+                          ),
+                        ),
+                      );
+              }),
         ],
       ),
     );
-  }
-
-  Widget _buildResultScreen(String title, String message, Color color) {
-    return Container(
-      alignment: Alignment.bottomCenter,
-      color: color,
-      width: double.infinity,
-      height: 250,
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            message,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () {
-              // Reset the game
-              setState(() {
-                _isGameStarted = false;
-                _hasWon = false;
-                _hasLost = false;
-                _attempts = 3;
-                _yPosition = MediaQuery.of(context).size.height / 1.5;
-                _isSatelliteVisible = true;
-              });
-            },
-            child: const Text('Yeniden Oyna'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class OrbitPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    Paint paint = Paint()
-      ..color = Colors.white.withOpacity(0.5)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    double centerX = size.width / 2;
-    double centerY = size.height / 4;
-    double radius = 90;
-
-    canvas.drawCircle(Offset(centerX, centerY), radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
   }
 }
